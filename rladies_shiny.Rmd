@@ -1,0 +1,216 @@
+---
+title: "Intro to R Shiny"
+author: "Kim Ky"
+date: "11/29/2017"
+output: html_document
+runtime: shiny
+---
+
+## What is Shiny?
+
+`shiny` is "an R package that makes it easy to build interactive web apps straight from R." [Click here](https://shiny.rstudio.com/) for more information.
+
+
+## Install R Shiny
+
+If you do not have `shiny` package installed on your machine, use command below to install. 
+
+```{r install, eval=FALSE}
+install.packages("shiny")
+```
+
+Once you have `shiny` installed, you can load the package using the `library` function.
+
+```{r, eval=FALSE}
+library(shiny)
+```
+
+In following examples, we will use `iris` data set that is available from MASS package.
+```{r}
+data("iris") # load iris data set
+head(iris) # show first several rows of iris
+```
+
+## Setting up
+
+A shiny app needs `ui` and `server`. They can be in the same file or two separate files that are named **ui.R** and **server.R**. We will start with defining `ui` and `server` in the same file. 
+
+```{r}
+ui <- fluidPage(
+    titlePanel("This is an empty Shiny app.")
+  )
+
+server <- function(input, output, session) {}
+```
+
+Once you define `ui` and `server` for our app, you can run it using the `shinyApp` command as below.
+
+```{r}
+shinyApp(
+  ui = ui,
+  server = server
+)
+```
+
+### Layout
+
+Use `sidebarLayout` to create a layout with a sidebar and main areas. Usually, sidebar panel contains all the inputs (where users interact) and main panel contains the output based on the inputs.
+
+```{r}
+ui <- fluidPage(
+  titlePanel("Side bar layout!"),
+    sidebarLayout(
+      sidebarPanel(p("This is the sidebar panel")),
+      mainPanel(p("This is the main panel"))
+    )
+  )
+
+shinyApp(ui = ui, server = server)
+```
+
+### Inputs
+
+Let's make our Shiny app a little bit more interesting! 
+
+```{r}
+ui <- fluidPage(
+  titlePanel("My Shiny App"),
+    sidebarLayout(
+      sidebarPanel(
+        selectInput(inputId = 'x', label = "X Variable", choices = names(iris)),
+        radioButtons(inputId = 'y', label = "Y Variable", choices = names(iris), inline = FALSE)
+      ),
+      mainPanel(p("This is the main panel"))
+    )
+  )
+shinyApp(ui = ui, server = server)
+```
+
+### Output
+
+Now we can add output based on selected inputs. 
+
+```{r}
+library(ggplot2)
+ui <- fluidPage(
+    titlePanel("My Shiny App"),
+  sidebarLayout(
+      sidebarPanel(
+        selectInput(inputId = 'x', label = "X Variable", choices = names(iris)),
+        radioButtons(inputId = 'y', label = "Y Variable", choices = names(iris), inline = FALSE)
+      ),
+      mainPanel(
+        plotOutput(outputId = 'plot')
+      )
+    )
+  )
+server = function(input, output, session) {
+  output$plot <- renderPlot({
+    ggplot() + 
+      geom_point(aes(x = iris[, input$x], y = iris[, input$y], size = 1), color = "#6f22b6") + 
+      theme_bw() + 
+      theme(legend.position = 'none') +
+      labs(x = paste(input$x), y = paste(input$y), title = paste0("Plotting ", input$x, " by ", input$y))
+  })
+}
+shinyApp(ui = ui, server = server)
+```
+
+### Observe vs Reactive
+
+The main difference between `observe` and `reactive` is that `observe` does not return any values while `reactive` does. These are used to update output based on inputs "reactively".
+
+```{r}
+ui <- fluidPage(
+    titlePanel("My Shiny App"),
+  sidebarLayout(
+      sidebarPanel(
+        selectInput(inputId = 'x', label = "X Variable", choices = names(iris)),
+        radioButtons(inputId = 'y', label = "Y Variable", choices = names(iris), inline = FALSE)
+      ),
+      mainPanel(
+        plotOutput(outputId = 'plot')
+      )
+    )
+  )
+server = function(input, output, session) {
+  observe({
+    updateRadioButtons(session, 'y', choices = names(iris)[!names(iris) %in% input$x])
+  })
+  
+  dat <- reactive({
+    return(data.frame(x = iris[, input$x], y = iris[, input$y]))
+  })
+  
+  output$plot <- renderPlot({
+    ggplot(dat()) + 
+      geom_point(aes(x = x, y = y, size = 1), color = "#6f22b6") + 
+      theme_bw() + 
+      theme(legend.position = 'none') +
+      labs(x = paste(input$x), y = paste(input$y), title = paste0("Plotting ", input$x, " by ", input$y))
+  })
+}
+shinyApp(ui = ui, server = server)
+```
+
+### Action Button and Reactive Values
+
+What if we do not want the plot to update right away when we change the inputs? This is particularly useful when there are many inputs, and the output takes a while to load. We can use `actionButton` to control when the plot should be updated.
+
+`reactiveValues` is commonly used to store values, which can be read by other reactive expressions (see above section on `observe` and `reactive`). `observeEvent` is similar to `observe` (see above section) but it only updates when at least one of the event expressions occurs (in the example below, the action button is clicked).
+
+```{r}
+ui <- fluidPage(
+    titlePanel("My Shiny App"),
+  sidebarLayout(
+      sidebarPanel(
+        selectInput(inputId = 'x', label = "X Variable", choices = names(iris)),
+        radioButtons(inputId = 'y', label = "Y Variable", choices = names(iris), inline = FALSE), 
+        tags$hr(), 
+        actionButton(inputId = 'action', label = "Update Plot")
+      ),
+      mainPanel(
+        plotOutput(outputId = 'plot')
+      )
+    )
+  )
+server = function(input, output, session) {
+  rv <- reactiveValues(p = NULL)
+  
+  observe({
+    updateRadioButtons(session, 'y', choices = names(iris)[!names(iris) %in% input$x])
+  })
+  
+  dat <- reactive({
+    return(data.frame(x = iris[, input$x], y = iris[, input$y]))
+  })
+  
+  output$plot <- renderPlot({
+    rv$p
+  })
+  
+  observeEvent(input$action, {
+    rv$p <- ggplot(dat()) + 
+      geom_point(aes(x = x, y = y, size = 1), color = "#6f22b6") + 
+      theme_bw() + 
+      theme(legend.position = 'none') +
+      labs(x = paste(input$x), y = paste(input$y), title = paste0("Plotting ", input$x, " by ", input$y))
+  })
+}
+shinyApp(ui = ui, server = server)
+```
+
+### Useful Resources
+
+- [Shiny Tutorial](https://shiny.rstudio.com/tutorial/): This is a really good place to start. There are so many examples and cool things to be inspired by!
+- [Another Tutorial](http://rstudio.github.io/shiny/tutorial/)
+
+### More Advanced, but FUN, Stuff
+
+- [Shiny Widget](https://dreamrs.github.io/shinyWidgets/articles/intro_shinyWidgets_fr.html): Make your Shiny applications prettier with these amazing add-on widgets. My favorite are `actionBttn` and `pickerInput`.
+- [Shiny Dashboard](https://rstudio.github.io/shinydashboard/): This package makes organizing your Shiny apps easier than ever.
+- [shinyURL](https://github.com/aoles/shinyURL): This lets you share your app easily by including all the selected inputs in the link.
+- [plotly](https://plot.ly/r/): Makes `ggplot` interactive (with tooltips)!
+- [leaflet](https://rstudio.github.io/leaflet/): Leaflet is an interactive map package. It works extremely well with Shiny. 
+- [dygraphs](https://rstudio.github.io/dygraphs/): Interactive time series plots which allows for zooming and panning. 
+- and much more!
